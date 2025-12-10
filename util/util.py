@@ -1,32 +1,35 @@
+
 """Utility helpers for the workspace.
 
 This module provides small helper functions used by agents and scripts:
-- `load_env` — load environment variables from a `.env` file (searches sensible
-  locations if a path is not provided) and validate required keys.
-- `create_anthropic_model` — create and return an Anthropic/Claude model
-  instance in a way that's robust across common LangChain / adapter versions.
+- `load_env` — load environment variables from a `.env` file (searches sensible locations if a path is not provided) and validate required keys.
+- `create_anthropic_model` — create and return an Anthropic/Claude model instance in a way that's robust across common LangChain / adapter versions.
 - `create_openai_model` — helper to create an OpenAI Chat model (small wrapper).
-
-The implementation prefers lazy imports to avoid hard runtime dependencies at
-import-time; errors are surfaced as clear exceptions.
 
 Usage:
     from util.util import load_env, create_anthropic_model
     load_env(required_vars=["ANTHROPIC_API_KEY"])  # loads .env if present
     model = create_anthropic_model(temperature=0.7)
-
 """
 
+# === Standard library imports ===
 from __future__ import annotations
-
 import logging
 import os
 import json
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
-from dotenv import load_dotenv as _load_dotenv
 
+# All dependencies are assumed installed; import unconditionally
+from dotenv import load_dotenv as _load_dotenv
+from langchain_core.messages import ToolMessage, HumanMessage
+from rich.console import Console
+from rich.markdown import Markdown
+from langchain_anthropic import ChatAnthropic
+from langchain_openai import ChatOpenAI
+
+# === Project logger ===
 logger = logging.getLogger(__name__)
 
 
@@ -102,26 +105,17 @@ def create_anthropic_model(
 ) -> Any:
     """Instantiate an Anthropic (Claude) chat model for use with LangChain.
 
-    This function attempts to find a compatible model class in the following
-    order (lazy imports):
-    1. `langchain_anthropic.ChatAnthropic` (recommended adapter package)
-    2. `langchain.chat_models.Anthropic` (LangChain's built-in wrapper, if present)
-
-    It requires `ANTHROPIC_API_KEY` to be set in the environment unless
+    Requires `langchain_anthropic` package to be installed.
+    Requires `ANTHROPIC_API_KEY` to be set in the environment unless
     `require_api_key=False`.
 
-    Returns an instantiated model object (the exact type depends on installed
-    packages). Raises RuntimeError if no compatible client is available.
+    Returns an instantiated model object. Raises RuntimeError if the package
+    or API key is not available.
     """
-    # Lazy import chain to avoid hard dependency at import time
-    ChatAnthropic = None
-    try:
-        from langchain_anthropic import ChatAnthropic  # type: ignore
-    except Exception:
-        try:
-            from langchain.chat_models import Anthropic as ChatAnthropic  # type: ignore
-        except Exception:
-            ChatAnthropic = None
+    if ChatAnthropic is None:
+        raise RuntimeError(
+            "No Anthropic/Claude client available. Install `langchain-anthropic`."
+        )
 
     api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
@@ -134,11 +128,6 @@ def create_anthropic_model(
     # Keep the env var available for downstream SDKs
     os.environ["ANTHROPIC_API_KEY"] = api_key
 
-    if ChatAnthropic is None:
-        raise RuntimeError(
-            "No Anthropic/Claude client available. Install `langchain-anthropic` or ensure LangChain exposes an Anthropic model class."
-        )
-
     model = model_name or os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-5-20250929")
     # Construct with common arguments; adapter classes should accept these.
     return ChatAnthropic(model=model, temperature=temperature)
@@ -147,13 +136,11 @@ def create_anthropic_model(
 def create_openai_model(temperature: float = 0.0, require_api_key: bool = True) -> Any:
     """Create a ChatOpenAI model instance (LangChain wrapper).
 
-    This helper lazily imports `ChatOpenAI` from `langchain.chat_models` and
-    ensures `OPENAI_API_KEY` is present when `require_api_key=True`.
+    Requires `langchain` package with OpenAI support.
+    Ensures `OPENAI_API_KEY` is present when `require_api_key=True`.
     """
-    try:
-        from langchain.chat_models import ChatOpenAI  # type: ignore
-    except Exception as exc:
-        raise RuntimeError("ChatOpenAI not available in installed LangChain") from exc
+    if ChatOpenAI is None:
+        raise RuntimeError("ChatOpenAI not available. Ensure LangChain is installed with OpenAI support.")
 
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
@@ -215,15 +202,12 @@ def print_beautiful(text: Optional[str]) -> None:
         print("(no response)")
         return
 
-    try:
-        from rich.console import Console
-        from rich.markdown import Markdown
-
+    if Console is not None and Markdown is not None:
         console = Console()
         console.rule("Assistant")
         console.print(Markdown(text))
         console.rule()
-    except Exception:
+    else:
         print("\n" + "=" * 40)
         print(text)
         print("=" * 40 + "\n")
@@ -288,12 +272,11 @@ def handle_tool_calls_and_respond(model_with_tools: Any, messages: list, respons
     and handles one level of recursive tool calls (if the model calls more tools
     after receiving results).
     """
-    # Lazy import to avoid hard dependency
-    try:
-        from langchain_core.messages import ToolMessage, HumanMessage
-    except Exception:  # pragma: no cover - defensive
-        # Fallback: try older import path
-        from langchain.messages import ToolMessage, HumanMessage  # type: ignore
+    # Ensure LangChain message classes are available
+    if ToolMessage is None or HumanMessage is None:
+        raise RuntimeError(
+            "LangChain message classes not available. Ensure `langchain_core` is installed."
+        )
 
     # Collect and execute tool calls
     tool_results = []
