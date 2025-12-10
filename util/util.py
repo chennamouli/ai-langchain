@@ -156,17 +156,19 @@ __all__ = ["load_env", "create_anthropic_model", "create_openai_model", "handle_
 
 
 def extract_response_text(resp: Any) -> Optional[str]:
-    """Return the assistant's textual content from various response shapes.
-
-    This mirrors the logic used by agent scripts to extract a human-friendly
-    text body from objects returned by LangChain / Anthropic adapters.
-    """
+    """Return the assistant's textual content from various response shapes as a string."""
     if resp is None:
         return None
     if hasattr(resp, "content"):
-        return resp.content
+        val = resp.content
+        if isinstance(val, list):
+            return "\n".join(str(x) for x in val)
+        return str(val)
     if hasattr(resp, "text"):
-        return resp.text
+        val = resp.text
+        if isinstance(val, list):
+            return "\n".join(str(x) for x in val)
+        return str(val)
     gens = getattr(resp, "generations", None)
     if gens:
         try:
@@ -174,19 +176,30 @@ def extract_response_text(resp: Any) -> Optional[str]:
             if isinstance(first, list):
                 first = first[0]
             if hasattr(first, "text"):
-                return first.text
+                val = first.text
+                if isinstance(val, list):
+                    return "\n".join(str(x) for x in val)
+                return str(val)
         except Exception:
             pass
     msg = getattr(resp, "message", None) or getattr(resp, "messages", None)
     if msg:
         try:
             if hasattr(msg, "content"):
-                return msg.content
+                val = msg.content
+                if isinstance(val, list):
+                    return "\n".join(str(x) for x in val)
+                return str(val)
             if isinstance(msg, list) and len(msg) > 0 and hasattr(msg[0], "content"):
-                return msg[0].content
+                val = msg[0].content
+                if isinstance(val, list):
+                    return "\n".join(str(x) for x in val)
+                return str(val)
         except Exception:
             pass
     try:
+        if isinstance(resp, list):
+            return "\n".join(str(x) for x in resp)
         return str(resp)
     except Exception:
         return None
@@ -201,7 +214,8 @@ def print_beautiful(text: Optional[str]) -> None:
     if not text:
         print("(no response)")
         return
-
+    if not isinstance(text, str):
+        text = str(text)
     if Console is not None and Markdown is not None:
         console = Console()
         console.rule("Assistant")
