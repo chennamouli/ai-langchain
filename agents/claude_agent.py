@@ -21,6 +21,9 @@ from util.util import (
     extract_response_text,
     print_beautiful,
 )
+from util.util import (
+    handle_tool_calls_and_respond,
+)
 from langchain.tools import tool
 from langchain_core.messages import HumanMessage
 
@@ -45,7 +48,7 @@ def multiply_numbers(a: float, b: float) -> float:
     """Multiply two numbers together."""
     return a * b
 
-# tools = [add_numbers, multiply_numbers]
+tools = [add_numbers, multiply_numbers]
 
 
 
@@ -55,13 +58,13 @@ def main():
     messages = [HumanMessage(content="What is 5 + 3 and then multiply the result by 2?")]
     print("User: What is 5 + 3 and then multiply the result by 2?\n")
     response = agent.invoke(messages)
-    print_beautiful(extract_response_text(response))
+    # If there are tool calls, handle recursively and print final answer
+    tool_map = {"add_numbers": add_numbers, "multiply_numbers": multiply_numbers}
     if getattr(response, "tool_calls", None):
-        print("Claude called the following tools:")
-        for tool_call in response.tool_calls:
-            print(f"  - {tool_call['name']}({tool_call['args']})")
+        final_response = handle_tool_calls_and_respond(agent, messages, response, tool_map)
+        print_beautiful(extract_response_text(final_response))
     else:
-        print("Claude responded without calling tools.")
+        print_beautiful(extract_response_text(response))
 
 
 if __name__ == "__main__":
